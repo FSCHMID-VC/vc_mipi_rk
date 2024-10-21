@@ -1,0 +1,8 @@
+config VIDEO_VC_DRIVER
+	tristate "VC sensors support"
+	depends on I2C && VIDEO_V4L2 && VIDEO_V4L2_SUBDEV_API
+	depends on MEDIA_CAMERA_SUPPORT
+	help
+	  This is a Video4Linux2 sensor driver for the Vision Components sensors
+
+	  To compile this driver as a module, choose M here

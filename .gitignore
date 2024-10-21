@@ -1,1 +1,8 @@
 .vscode-ctags
+*.cmd
+*.ko
+*.mod.c
+*.mod.o
+*.mod
+*.o
+*.order
