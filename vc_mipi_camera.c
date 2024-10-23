@@ -4,7 +4,7 @@
 #include <media/v4l2-subdev.h>
 #include <media/v4l2-ctrls.h>
 #include <media/v4l2-fwnode.h>
-// #define ENABLE_PM    // support for power management
+#define ENABLE_PM    // support for power management
 #ifdef ENABLE_PM
 #include <linux/pm_runtime.h>
 #endif
@@ -857,12 +857,7 @@ static long imx415_ioctl(struct v4l2_subdev *sd, unsigned int cmd, void *arg)
 
 		stream = *((u32 *)arg);
 
-		// if (stream)
-		// 	ret = imx415_write_reg(imx415->client, IMX415_REG_CTRL_MODE,
-		// 		IMX415_REG_VALUE_08BIT, IMX415_MODE_STREAMING);
-		// else
-		// 	ret = imx415_write_reg(imx415->client, IMX415_REG_CTRL_MODE,
-		// 		IMX415_REG_VALUE_08BIT, IMX415_MODE_SW_STANDBY);
+		vc_sd_s_stream(sd, stream);
 		break;
 	case RKMODULE_GET_SONY_BRL:
     //TODO Adjust for binning
