@@ -971,6 +971,17 @@ __u32 vc_core_calculate_max_exposure(struct vc_cam *cam, __u8 num_lanes,
 	}
 }
 
+/**
+ * vc_core_get_optimized_vmax - Calculate the optimized VMAX value for a camera.
+ * @cam: Pointer to the vc_cam structure representing the camera.
+ *
+ * This function calculates the optimized VMAX value based on the camera's
+ * current state, including the number of lanes, format, binning mode, and
+ * frame height. If the FLAG_INCREASE_FRAME_RATE flag is set and the image
+ * height is reduced, the frame rate is increased by adjusting the VMAX value.
+ *
+ * Return: The optimized VMAX value.
+ */
 __u32 vc_core_get_optimized_vmax(struct vc_cam *cam)
 {
 	struct vc_ctrl *ctrl = &cam->ctrl;
@@ -1008,6 +1019,20 @@ __u32 vc_core_get_optimized_vmax(struct vc_cam *cam)
 	return vmax_def;
 }
 
+/**
+ * vc_core_calculate_max_frame_rate - Calculate the maximum frame rate for a camera.
+ * @cam: Pointer to the camera structure.
+ * @num_lanes: Number of data lanes used.
+ * @format: Format of the image data.
+ * @binning: Binning mode used.
+ *
+ * This function calculates the maximum frame rate for a given camera configuration.
+ * It retrieves the sensor device, calculates the period for one horizontal line,
+ * and gets the optimized and default vertical maximum (vmax) values. It then
+ * computes the maximum frame rate based on these parameters.
+ *
+ * Return: The maximum frame rate in frames per second.
+ */
 __u32 vc_core_calculate_max_frame_rate(struct vc_cam *cam, __u8 num_lanes,
 				       __u8 format, __u8 binning)
 {
@@ -1017,10 +1042,10 @@ __u32 vc_core_calculate_max_frame_rate(struct vc_cam *cam, __u8 num_lanes,
 	__u32 vmax = vc_core_get_optimized_vmax(cam);
 	__u32 vmax_def = vc_core_get_vmax(cam, num_lanes, format, binning).def;
 
-	vc_dbg(dev, "%s(): period_1H_ns: %u, vmax: %u/%u\n", __FUNCTION__,
+	vc_notice(dev, "%s(): period_1H_ns: %u, vmax: %u/%u\n", __FUNCTION__,
 	       period_1H_ns, vmax, vmax_def);
 
-	return div_u64(1000000, (((__u64)period_1H_ns * vmax)));
+	return div_u64(1000000000000, (((__u64)period_1H_ns * vmax)));
 }
 
 // ------------------------------------------------------------------------------------------------
@@ -2255,7 +2280,7 @@ static void vc_core_calculate_vmax(struct vc_cam *cam, __u32 period_1H_ns)
 	state->vmax = vc_core_get_optimized_vmax(cam);
 	// Lower the frame rate if the frame rate setting requires it.
 	if (state->framerate > 0) {
-		frametime_ns = div_u64(1000000000000, state->framerate);
+		frametime_ns = div_u64(1000000000, state->framerate);
 		frametime_1H = div_u64(frametime_ns, period_1H_ns);
 		if (frametime_1H > state->vmax) {
 			state->vmax = frametime_1H;
