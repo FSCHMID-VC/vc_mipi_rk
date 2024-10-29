@@ -131,6 +131,29 @@ static int __maybe_unused vc_suspend(struct device *dev)
 	return 0;
 }
 
+#ifdef CONFIG_VIDEO_V4L2_SUBDEV_API
+static int vc_open(struct v4l2_subdev *sd, struct v4l2_subdev_fh *fh)
+{
+	struct vc_cam *cam = to_vc_cam(sd);
+
+	struct vc_frame *frame = NULL;
+
+
+	struct v4l2_mbus_framefmt *try_fmt =
+				v4l2_subdev_get_try_format(sd, fh->pad, 0);
+	frame = vc_core_get_frame(cam);
+
+	/* Initialize try_fmt */
+	try_fmt->width = frame->width;
+	try_fmt->height = frame->height;
+	try_fmt->code = vc_core_get_format(cam);
+	try_fmt->field = V4L2_FIELD_NONE;
+
+	/* No crop or compose */
+
+	return 0;
+}
+#endif
 static int __maybe_unused vc_resume(struct device *dev)
 {
 	struct i2c_client *client = to_i2c_client(dev);
@@ -293,6 +316,62 @@ static int vc_sd_enum_mbus_code(struct v4l2_subdev *sd,
 	code->code = mbus_code;
 
 	mutex_unlock(&device->mutex);
+
+	return 0;
+}
+static int vc_enum_frame_sizes(struct v4l2_subdev *sd,
+				   struct v4l2_subdev_pad_config *cfg,
+				   struct v4l2_subdev_frame_size_enum *fse)
+{
+	struct vc_cam *cam = to_vc_cam(sd);
+	struct vc_frame *frame = NULL;
+
+	if (fse->index >= 1) //TODO
+		return -EINVAL;
+
+	if (fse->code != vc_core_get_format(cam))
+		return -EINVAL;
+	frame = vc_core_get_frame(cam);
+	fse->min_width  = frame->width;
+	fse->max_width  = frame->width;
+	fse->max_height = frame->height;
+	fse->min_height = frame->height;
+
+	return 0;
+}
+
+
+static int vc_enum_frame_interval(struct v4l2_subdev *sd,
+				       struct v4l2_subdev_pad_config *cfg,
+				       struct v4l2_subdev_frame_interval_enum *fie)
+{
+	struct vc_cam *cam = to_vc_cam(sd);
+	struct vc_frame *frame = NULL;
+	struct v4l2_fract interval = { 1, vc_core_get_framerate(cam)};
+	
+	if (fie->index >= 1) //TODO
+		return -EINVAL;
+
+	frame = vc_core_get_frame(cam);
+	fie->code = vc_core_get_format(cam);
+	fie->width  = frame->width;
+	fie->height  = frame->height;
+	fie->interval = 	interval;
+	fie->reserved[0] = NO_HDR;
+	return 0;
+}
+
+static int vc_g_mbus_config(struct v4l2_subdev *sd, unsigned int pad_id,
+				struct v4l2_mbus_config *config)
+{
+
+	u32 val = 0;
+
+	val = 1 << (4 - 1) |
+			V4L2_MBUS_CSI2_CHANNEL_0 |
+			V4L2_MBUS_CSI2_CONTINUOUS_CLOCK;
+	config->type = V4L2_MBUS_CSI2_CPHY;
+	config->flags = val;
 
 	return 0;
 }
@@ -1015,9 +1094,9 @@ static const struct v4l2_subdev_pad_ops vc_pad_ops = {
 	.get_selection = vc_sd_get_selection,
 	.set_selection = vc_sd_set_selection,
 
-	// .enum_frame_size = imx415_enum_frame_sizes,
-	// .enum_frame_interval = imx415_enum_frame_interval,
-	// .get_mbus_config = imx415_g_mbus_config,
+	.enum_frame_size = vc_enum_frame_sizes,
+	.enum_frame_interval = vc_enum_frame_interval,
+	.get_mbus_config = vc_g_mbus_config,
 };
 
 static const struct v4l2_subdev_ops vc_subdev_ops = {
@@ -1267,7 +1346,11 @@ static int vc_link_setup(struct media_entity *entity,
 {
 	return 0;
 }
-
+#ifdef CONFIG_VIDEO_V4L2_SUBDEV_API
+static const struct v4l2_subdev_internal_ops vc_sd_internal_ops = {
+	.open = vc_open,
+};
+#endif
 static const struct media_entity_operations vc_sd_media_ops = {
 	.link_setup = vc_link_setup,
 };
@@ -1309,6 +1392,7 @@ static int vc_probe(struct i2c_client *client)
 		V4L2_SUBDEV_FL_HAS_DEVNODE | V4L2_SUBDEV_FL_HAS_EVENTS;
 	device->pad.flags = MEDIA_PAD_FL_SOURCE;
 	device->sd.entity.ops = &vc_sd_media_ops;
+	device->sd.internal_ops = &vc_sd_internal_ops;
 	device->sd.entity.function = MEDIA_ENT_F_CAM_SENSOR;
 	ret = media_entity_pads_init(&device->sd.entity, 1, &device->pad);
 	if (ret)
@@ -1410,7 +1494,11 @@ static struct i2c_driver vc_i2c_driver = {
 #ifdef ENABLE_PM
                 .pm = &vc_pm_ops,
 #endif
+#ifdef CONFIG_ACPI
+
                 .acpi_match_table = ACPI_PTR(vc_acpi_ids),
+#endif
+
                 .of_match_table = vc_dt_ids,
         },
         .id_table = vc_id,
