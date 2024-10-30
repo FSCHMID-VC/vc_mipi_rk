@@ -128,7 +128,7 @@ static __u8 i2c_read_reg(struct device *dev, struct i2c_client *client,
 		return ret;
 	}
 
-	vc_dbg(dev, "%s():   addr: 0x%04x => value: 0x%02x\n", func, addr,
+	vc_info(dev, "%s():   addr: 0x%04x => value: 0x%02x\n", func, addr,
 	       buf[0]);
 
 	return buf[0];
@@ -142,7 +142,7 @@ static int i2c_write_reg(struct device *dev, struct i2c_client *client,
 	__u8 tx[3];
 	int ret;
 
-	vc_dbg(dev, "%s():   addr: 0x%04x <= value: 0x%02x\n", func, addr,
+	vc_info(dev, "%s():   addr: 0x%04x <= value: 0x%02x\n", func, addr,
 	       value);
 
 	msg.addr = client->addr;
@@ -684,7 +684,7 @@ int vc_core_enum_mbus_code(struct vc_cam *cam, __u32 index)
 			struct vc_desc_mode *mode = &desc->modes[modeIx];
 			__u32 code = vc_core_format_to_mbus_code(
 				mode->format, is_color, is_bgrg);
-			vc_dbg(dev, "%s(): Checking mode %u (code: 0x%04x)\n",
+			vc_info(dev, "%s(): Checking mode %u (code: 0x%04x)\n",
 			       __FUNCTION__, modeIx, code);
 
 			for (codeIx = 0; codeIx < ARRAY_SIZE(desc->mbus_codes);
@@ -698,7 +698,7 @@ int vc_core_enum_mbus_code(struct vc_cam *cam, __u32 index)
 				}
 			}
 		}
-		vc_dbg(dev,
+		vc_info(dev,
 		       "%s(): MBUS codes (0x%04x, 0x%04x, 0x%04x, 0x%04x)\n",
 		       __FUNCTION__, desc->mbus_codes[0], desc->mbus_codes[1],
 		       desc->mbus_codes[2], desc->mbus_codes[3]);
@@ -722,7 +722,7 @@ int vc_core_try_format(struct vc_cam *cam, __u32 code)
 
 	for (index = 0; index < desc->num_modes; index++) {
 		struct vc_desc_mode *mode = &desc->modes[index];
-		vc_dbg(dev, "%s(): Checking mode %u (format: 0x%02x)",
+		vc_info(dev, "%s(): Checking mode %u (format: 0x%02x)",
 		       __FUNCTION__, index, mode->format);
 		if (mode->format == format) {
 			return 0;
@@ -881,7 +881,7 @@ __u32 vc_core_get_num_lanes(struct vc_cam *cam)
 	struct vc_state *state = &cam->state;
 	struct device *dev = vc_core_get_sen_device(cam);
 
-	vc_dbg(dev, "%s(): Get number of lanes: %u\n", __FUNCTION__,
+	vc_info(dev, "%s(): Get number of lanes: %u\n", __FUNCTION__,
 	       state->num_lanes);
 	return state->num_lanes;
 }
@@ -953,7 +953,7 @@ __u32 vc_core_calculate_max_exposure(struct vc_cam *cam, __u8 num_lanes,
 	default: {
 		__u32 period_1H_ns = vc_core_calculate_period_1H(
 			cam, num_lanes, format, binning);
-		vc_dbg(dev,
+		vc_info(dev,
 		       "%s(): period_1H_ns: %u, vmax.max: %u, vmax.min: %u\n",
 		       __FUNCTION__, period_1H_ns, vmax_max, vmax_min);
 		return div_u64(((__u64)period_1H_ns * (vmax_max - vmax_min)),
@@ -963,7 +963,7 @@ __u32 vc_core_calculate_max_exposure(struct vc_cam *cam, __u8 num_lanes,
 	case REG_TRIGGER_PULSEWIDTH:
 	case REG_TRIGGER_SELF:
 	case REG_TRIGGER_SINGLE: {
-		vc_dbg(dev, "%s(): clk_ext_trigger: %u\n", __FUNCTION__,
+		vc_info(dev, "%s(): clk_ext_trigger: %u\n", __FUNCTION__,
 		       ctrl->clk_ext_trigger);
 		return div_u64((__u64)0xffffffff * 1000000,
 			       ctrl->clk_ext_trigger);
@@ -1008,7 +1008,7 @@ __u32 vc_core_get_optimized_vmax(struct vc_cam *cam)
 	if (ctrl->flags & FLAG_INCREASE_FRAME_RATE &&
 	    height < ctrl->frame.height) {
 		vmax_res = vmax_def - (ctrl->frame.height - height);
-		vc_dbg(dev,
+		vc_info(dev,
 		       "%s(): Increased frame rate: vmax %u/%u, height: %u/%u, vmax result: %u \n",
 		       __FUNCTION__, state->vmax, vmax_def, state->frame.height,
 		       ctrl->frame.height, vmax_res);
@@ -1066,7 +1066,7 @@ struct i2c_client *vc_mod_get_client(struct device *dev,
 #if LINUX_VERSION_CODE < KERNEL_VERSION(5, 5, 0)
 		client = i2c_new_probed_device(adapter, &info, addr_list, NULL);
 		if (client != NULL) {
-			vc_dbg(dev,
+			vc_info(dev,
 			       "%s(): %u attempts took %u ms to probe i2c device 0x%02x\n",
 			       __func__, count, count, i2c_addr);
 			return client;
@@ -1075,7 +1075,7 @@ struct i2c_client *vc_mod_get_client(struct device *dev,
 		client =
 			i2c_new_scanned_device(adapter, &info, addr_list, NULL);
 		if (!IS_ERR(client)) {
-			vc_dbg(dev,
+			vc_info(dev,
 			       "%s(): %u attempts took %u ms to scan i2c device 0x%02x\n",
 			       __func__, count, count, i2c_addr);
 			return client;
@@ -1135,7 +1135,7 @@ static int vc_mod_read_status(struct i2c_client *client)
 		vc_err(dev, "%s(): Unable to get module status (error: %d)\n",
 		       __FUNCTION__, ret);
 	else
-		vc_dbg(dev, "%s(): Get module status: 0x%02x\n", __FUNCTION__,
+		vc_info(dev, "%s(): Get module status: 0x%02x\n", __FUNCTION__,
 		       ret);
 
 	return ret;
@@ -1146,7 +1146,7 @@ static int vc_mod_write_trigger_mode(struct i2c_client *client, int mode)
 	struct device *dev = &client->dev;
 	int ret;
 
-	vc_dbg(dev, "%s(): Write trigger mode: 0x%02x\n", __FUNCTION__, mode);
+	vc_info(dev, "%s(): Write trigger mode: 0x%02x\n", __FUNCTION__, mode);
 
 	ret = i2c_write_reg(dev, client, MOD_REG_EXTTRIG, mode, __FUNCTION__);
 	if (ret)
@@ -1162,7 +1162,7 @@ static int vc_mod_write_io_mode(struct i2c_client *client, int mode)
 	struct device *dev = &client->dev;
 	int ret;
 
-	vc_dbg(dev, "%s(): Write IO mode: %s\n", __FUNCTION__,
+	vc_info(dev, "%s(): Write IO mode: %s\n", __FUNCTION__,
 	       mode ? "ON" : "OFF");
 
 	ret = i2c_write_reg(dev, client, MOD_REG_IOCTRL, mode, __FUNCTION__);
@@ -1179,7 +1179,7 @@ static int vc_mod_wait_until_module_is_ready(struct i2c_client *client)
 	int status;
 	int try;
 
-	vc_dbg(dev, "%s(): Wait until module is ready\n", __FUNCTION__);
+	vc_info(dev, "%s(): Wait until module is ready\n", __FUNCTION__);
 
 	status = REG_STATUS_NO_COM;
 	try = 0;
@@ -1193,7 +1193,7 @@ static int vc_mod_wait_until_module_is_ready(struct i2c_client *client)
 		return -EIO;
 	}
 
-	vc_dbg(dev, "%s(): Module is ready!\n", __FUNCTION__);
+	vc_info(dev, "%s(): Module is ready!\n", __FUNCTION__);
 	return 0;
 }
 
@@ -1207,7 +1207,7 @@ static int vc_mod_setup(struct vc_ctrl *ctrl, int mod_i2c_addr,
 	struct device *dev_mod;
 	int addr, reg;
 
-	vc_dbg(dev_sen, "%s(): Setup the module\n", __FUNCTION__);
+	vc_info(dev_sen, "%s(): Setup the module\n", __FUNCTION__);
 
 	if (!i2c_check_functionality(adapter, I2C_FUNC_SMBUS_BYTE_DATA)) {
 		vc_err(dev_sen,
@@ -1267,7 +1267,7 @@ int vc_core_update_controls(struct vc_cam *cam)
 		ctrl->framerate.max = vc_core_calculate_max_frame_rate(
 			cam, num_lanes, format, binning);
 
-		vc_dbg(dev,
+		vc_info(dev,
 		       "%s(): num_lanes: %u, format %u, exposure.max: %u us, framerate.max: %u mHz\n",
 		       __FUNCTION__, num_lanes, format, ctrl->exposure.max,
 		       ctrl->framerate.max);
@@ -1363,7 +1363,7 @@ static int vc_mod_write_exposure(struct i2c_client *client, __u32 value)
 	struct device *dev = &client->dev;
 	int ret;
 
-	vc_dbg(dev, "%s(): Write module exposure = 0x%08x (%u)\n", __FUNCTION__,
+	vc_info(dev, "%s(): Write module exposure = 0x%08x (%u)\n", __FUNCTION__,
 	       value, value);
 
 	ret = i2c_write_reg(dev, client, MOD_REG_EXPO_L, L_BYTE(value),
@@ -1383,7 +1383,7 @@ static int vc_mod_write_retrigger(struct i2c_client *client, __u32 value)
 	struct device *dev = &client->dev;
 	int ret;
 
-	vc_dbg(dev, "%s(): Write module retrigger = 0x%08x (%u)\n",
+	vc_info(dev, "%s(): Write module retrigger = 0x%08x (%u)\n",
 	       __FUNCTION__, value, value);
 
 	ret = i2c_write_reg(dev, client, MOD_REG_RETRIG_L, L_BYTE(value),
@@ -1410,7 +1410,7 @@ static __u8 vc_mod_find_mode(struct vc_cam *cam, __u8 num_lanes, __u8 format,
 		struct vc_desc_mode *mode = &desc->modes[index];
 		data_rate = (*(__u32 *)mode->data_rate) / 1000000;
 
-		vc_dbg(dev,
+		vc_info(dev,
 		       "%s(): Checking mode (#%02u, data_rate: %u, lanes: %u, format: 0x%02x, type: 0x%02x, binning: 0x%02x)",
 		       __FUNCTION__, index, data_rate, mode->num_lanes,
 		       mode->format, mode->type, mode->binning);
@@ -1429,7 +1429,7 @@ static int vc_mod_write_mode(struct i2c_client *client, __u8 mode)
 	struct device *dev = &client->dev;
 	int ret;
 
-	vc_dbg(dev, "%s(): Write module mode: 0x%02x\n", __FUNCTION__, mode);
+	vc_info(dev, "%s(): Write module mode: 0x%02x\n", __FUNCTION__, mode);
 
 	ret = i2c_write_reg(dev, client, MOD_REG_MODE, mode, __FUNCTION__);
 	if (ret)
@@ -1447,7 +1447,7 @@ int vc_mod_reset_module(struct vc_cam *cam, __u8 mode)
 	struct device *dev = &client->dev;
 	int ret;
 
-	vc_dbg(dev, "%s(): Reset the module!\n", __FUNCTION__);
+	vc_info(dev, "%s(): Reset the module!\n", __FUNCTION__);
 
 	ret = vc_mod_set_power(cam, 0);
 	ret |= vc_mod_write_mode(client, mode);
@@ -1537,7 +1537,7 @@ int vc_mod_set_mode(struct vc_cam *cam, int *reset)
 	if ((mode == state->mode) &&
 	    (!(ctrl->flags & FLAG_RESET_ALWAYS) && (type == MODE_TYPE_STREAM) &&
 	     !reset_binning)) {
-		vc_dbg(dev, "%s(): Module mode %u need not to be set!\n",
+		vc_info(dev, "%s(): Module mode %u need not to be set!\n",
 		       __FUNCTION__, mode);
 		*reset = 0;
 		return 0;
@@ -1740,7 +1740,7 @@ int vc_sen_write_mode(struct vc_ctrl *ctrl, int mode)
 	__u8 value;
 	int ret = 0;
 
-	vc_dbg(dev, "%s(): Write sensor mode: %s\n", __FUNCTION__,
+	vc_info(dev, "%s(): Write sensor mode: %s\n", __FUNCTION__,
 	       (mode == ctrl->csr.sen.mode_standby) ? "standby" : "operating");
 
 	// TODO: Check if it is realy necessary to swap order of write opertations.
@@ -1783,7 +1783,7 @@ static int vc_sen_read_image_size(struct vc_ctrl *ctrl, struct vc_frame *size)
 	size->height = i2c_read_reg2(dev, client, &ctrl->csr.sen.o_height,
 				     __FUNCTION__);
 
-	vc_dbg(dev, "%s(): Read image size (width: %u, height: %u)\n",
+	vc_info(dev, "%s(): Read image size (width: %u, height: %u)\n",
 	       __FUNCTION__, size->width, size->height);
 
 	return 0;
@@ -1916,7 +1916,7 @@ int vc_sen_set_roi(struct vc_cam *cam)
 		return -EINVAL;
 	}
 
-	vc_dbg(dev, "%s() h_factor: %d, v_factor: %d \n", __FUNCTION__,
+	vc_info(dev, "%s() h_factor: %d, v_factor: %d \n", __FUNCTION__,
 	       binning->h_factor, binning->v_factor);
 
 	i2c_write_regs(client, binning->regs, __FUNCTION__);
@@ -1924,7 +1924,7 @@ int vc_sen_set_roi(struct vc_cam *cam)
 	vc_core_calculate_roi(cam, &w_left, &w_right, &w_width, &w_top,
 			      &w_bottom, &w_height, &o_width, &o_height);
 
-	vc_dbg(dev,
+	vc_info(dev,
 	       "%s(): Set sensor roi: "
 	       "(left-width-right: %u+%u=%u=>%u, top-height-bottom: %u+%u=%u=>%u)\n",
 	       __FUNCTION__, w_left, w_width, w_right, o_width, w_top, w_height,
@@ -1983,7 +1983,7 @@ static int vc_sen_write_vmax(struct vc_ctrl *ctrl, __u32 vmax)
 	struct i2c_client *client = ctrl->client_sen;
 	struct device *dev = &client->dev;
 
-	vc_dbg(dev, "%s(): Write sensor VMAX: 0x%08x (%u)\n", __FUNCTION__,
+	vc_info(dev, "%s(): Write sensor VMAX: 0x%08x (%u)\n", __FUNCTION__,
 	       vmax, vmax);
 
 	return i2c_write_reg4(dev, client, &ctrl->csr.sen.vmax, vmax,
@@ -1995,7 +1995,7 @@ static int vc_sen_write_shs(struct vc_ctrl *ctrl, __u32 shs)
 	struct i2c_client *client = ctrl->client_sen;
 	struct device *dev = &client->dev;
 
-	vc_dbg(dev, "%s(): Write sensor SHS: 0x%08x (%u)\n", __FUNCTION__, shs,
+	vc_info(dev, "%s(): Write sensor SHS: 0x%08x (%u)\n", __FUNCTION__, shs,
 	       shs);
 
 	return i2c_write_reg4(dev, client, &ctrl->csr.sen.shs, shs,
@@ -2007,7 +2007,7 @@ static int vc_sen_write_flash_duration(struct vc_ctrl *ctrl, __u32 duration)
 	struct i2c_client *client = ctrl->client_sen;
 	struct device *dev = &client->dev;
 
-	vc_dbg(dev, "%s(): Write sensor flash duration: 0x%08x (%u)\n",
+	vc_info(dev, "%s(): Write sensor flash duration: 0x%08x (%u)\n",
 	       __FUNCTION__, duration, duration);
 
 	return i2c_write_reg4(dev, client, &ctrl->csr.sen.flash_duration,
@@ -2019,7 +2019,7 @@ static int vc_sen_write_flash_offset(struct vc_ctrl *ctrl, __u32 offset)
 	struct i2c_client *client = ctrl->client_sen;
 	struct device *dev = &client->dev;
 
-	vc_dbg(dev, "%s(): Write sensor flash offset: 0x%08x (%u)\n",
+	vc_info(dev, "%s(): Write sensor flash offset: 0x%08x (%u)\n",
 	       __FUNCTION__, offset, offset);
 
 	return i2c_write_reg4(dev, client, &ctrl->csr.sen.flash_offset, offset,
@@ -2064,14 +2064,14 @@ int vc_sen_set_gain(struct vc_cam *cam, int gain_mdB)
 	case GAIN_LOGARITHMIC:
 		gain_times = div_u64(
 			1000000, vc_core_mdB_to_times(div_u64(gain_mdB, 2)));
-		vc_dbg(dev, "%s(): GAIN_LOG %u mdB -> %u times\n", __FUNCTION__,
+		vc_info(dev, "%s(): GAIN_LOG %u mdB -> %u times\n", __FUNCTION__,
 		       gain_mdB, gain_times);
 		// gain = (1000 * ctrl->gain.c1 - gain_times * ctrl->gain.c0) / 1000;
 		break;
 
 	case GAIN_RECIPROCAL:
 		gain_times = vc_core_mdB_to_times(gain_mdB);
-		vc_dbg(dev, "%s(): GAIN_REC %u mdB -> %u times\n", __FUNCTION__,
+		vc_info(dev, "%s(): GAIN_REC %u mdB -> %u times\n", __FUNCTION__,
 		       gain_mdB, gain_times);
 		gain = ctrl->gain.c1 -
 		       div_u64(1000 * (__u64)ctrl->gain.c0, gain_times);
@@ -2082,7 +2082,7 @@ int vc_sen_set_gain(struct vc_cam *cam, int gain_mdB)
 		gain_fraction =
 			0; //(( gain_times - (gain_times / 1000) * 1000) * 16)/ 1000; //TODO: Check if this is correct, always 0?
 		gain = (div_u64(gain_times, 1000) << 4) + gain_fraction;
-		// vc_dbg(dev, "%s(): GAIN_FRA %u mdB -> %u times (%u.%u) => 0x%02x\n", __FUNCTION__, gain_mdB, gain_times,
+		// vc_info(dev, "%s(): GAIN_FRA %u mdB -> %u times (%u.%u) => 0x%02x\n", __FUNCTION__, gain_mdB, gain_times,
 		//         gain_times / 1000, gain_fraction, gain );
 		break;
 	}
@@ -2150,7 +2150,7 @@ int vc_sen_start_stream(struct vc_cam *cam)
 	int ret = 0;
 
 	vc_info(dev, "%s(): Start streaming\n", __FUNCTION__);
-	vc_dbg(dev, "%s(): MM: 0x%02x, TM: 0x%02x, IO: 0x%02x\n", __FUNCTION__,
+	vc_info(dev, "%s(): MM: 0x%02x, TM: 0x%02x, IO: 0x%02x\n", __FUNCTION__,
 	       state->mode, state->trigger_mode, state->io_mode);
 
 	if (state->streaming) {
@@ -2205,7 +2205,7 @@ int vc_sen_stop_stream(struct vc_cam *cam)
 
 	state->streaming = 0;
 
-	vc_dbg(dev,
+	vc_info(dev,
 	       "%s(): ----------------------------------------------------------\n",
 	       __FUNCTION__);
 
@@ -2286,7 +2286,7 @@ static void vc_core_calculate_vmax(struct vc_cam *cam, __u32 period_1H_ns)
 			state->vmax = frametime_1H;
 		}
 
-		vc_dbg(dev,
+		vc_info(dev,
 		       "%s(): framerate: %u mHz, frametime: %llu ns, %llu 1H\n",
 		       __FUNCTION__, state->framerate, frametime_ns,
 		       frametime_1H);
@@ -2392,7 +2392,7 @@ static void vc_calculate_exposure(struct vc_cam *cam, __u32 exposure_us)
 		vc_calculate_exposure_normal(cam, exposure_1H);
 	}
 
-	vc_dbg(dev,
+	vc_info(dev,
 	       "%s(): flags: 0x%04x, period_1H_ns: %u, shs: %u/%u, vmax: %u/%u\n",
 	       __FUNCTION__, ctrl->flags, period_1H_ns, state->shs, vmax_min,
 	       state->vmax, vmax_def);
@@ -2440,7 +2440,7 @@ static void vc_calculate_trig_exposure(struct vc_cam *cam, __u32 exposure_us)
 		}
 	}
 
-	vc_dbg(dev,
+	vc_info(dev,
 	       "%s(): min_frametime: %u us, frametime: %u us, exposure: %u us\n",
 	       __FUNCTION__, min_frametime_us, frametime_us, exposure_us);
 	state->retrigger_cnt =
@@ -2519,7 +2519,7 @@ int vc_sen_set_exposure(struct vc_cam *cam, int exposure_us)
 		cam->state.exposure = exposure_us;
 	}
 
-	vc_dbg(dev, "%s(): (VMAX: %5u, SHS: %5u), (RETC: %6u, EXPC: %6u)\n",
+	vc_info(dev, "%s(): (VMAX: %5u, SHS: %5u), (RETC: %6u, EXPC: %6u)\n",
 	       __FUNCTION__, state->vmax, state->shs, state->retrigger_cnt,
 	       state->exposure_cnt);
 

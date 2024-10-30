@@ -1,10 +1,16 @@
 #include "vc_mipi_core.h"
+#include <linux/clk.h>
+
 #include <linux/module.h>
+#include <linux/delay.h>
+
+#include <stdbool.h>
 // #include <linux/gpio/consumer.h>
 #include <media/v4l2-subdev.h>
+#include <linux/regulator/consumer.h>
 #include <media/v4l2-ctrls.h>
 #include <media/v4l2-fwnode.h>
-#define ENABLE_PM // support for power management
+// #define ENABLE_PM // support for power management
 #ifdef ENABLE_PM
 #include <linux/pm_runtime.h>
 #endif
@@ -13,6 +19,8 @@
 #include <linux/rk-preisp.h>
 #include <linux/rk-camera-module.h>
 #include <linux/version.h>
+#include <linux/pinctrl/consumer.h>
+
 #include "../../platform/rockchip/isp/rkisp_tb_helper.h"
 
 #endif
@@ -42,6 +50,15 @@
 /* Basic Readout Lines. Number of necessary readout lines in sensor */
 #define BRL_ALL 2228u
 #define BRL_BINNING 1115u
+#define OF_CAMERA_PINCTRL_STATE_DEFAULT	"rockchip,camera_default"
+#define OF_CAMERA_PINCTRL_STATE_SLEEP	"rockchip,camera_sleep"
+static const char * const vc_supply_names[] = {
+	"avdd",		/* Analog power */
+	"dovdd",	/* Digital I/O power */
+	"dvdd",		/* Digital core power */
+};
+
+#define VC_NUM_SUPPLIES ARRAY_SIZE(vc_supply_names)
 struct vc_device {
 	unsigned int csi_id;
 	struct v4l2_subdev sd;
@@ -52,6 +69,18 @@ struct vc_device {
 	struct mutex mutex;
 
 	struct vc_cam cam;
+	struct gpio_desc	*reset_gpio;
+	struct gpio_desc	*pwdn_gpio;
+	struct regulator_bulk_data supplies[VC_NUM_SUPPLIES];
+
+	struct pinctrl		*pinctrl;
+	struct pinctrl_state	*pins_default;
+	struct pinctrl_state	*pins_sleep;
+	bool is_thunderboot;
+	u32 xvclk_freq;
+	struct clk		*xvclk;
+
+
 };
 
 // static struct __maybe_unused__ rkmodule_csi_dphy_param dcphy_param = {
@@ -77,7 +106,97 @@ static inline struct vc_cam *to_vc_cam(struct v4l2_subdev *sd)
 }
 
 // --- v4l2_subdev_core_ops ---------------------------------------------------
+static void __vc_power_off(struct device *dev)
+{
+	int ret;
+	struct i2c_client *client = to_i2c_client(dev);
+	struct v4l2_subdev *sd = i2c_get_clientdata(client);
+	struct vc_device *device = to_vc_device(sd);
+	clk_disable_unprepare(device->xvclk);
+	
 
+	if (!IS_ERR(device->pwdn_gpio))
+		gpiod_set_value_cansleep(device->pwdn_gpio, 0);
+	clk_disable_unprepare(device->xvclk);
+	if (!IS_ERR(device->reset_gpio))
+		gpiod_set_value_cansleep(device->reset_gpio, 0);
+	if (!IS_ERR_OR_NULL(device->pins_sleep)) {
+		ret = pinctrl_select_state(device->pinctrl,
+					   device->pins_sleep);
+		if (ret < 0)
+			dev_dbg(dev, "could not set pins\n");
+	}
+	regulator_bulk_disable(VC_NUM_SUPPLIES, device->supplies);
+}
+/* Calculate the delay in us by clock rate and clock cycles */
+static inline u32 sc3336_cal_delay(u32 cycles, struct vc_device *device)
+{
+	return DIV_ROUND_UP(cycles, device->cam.ctrl.clk_pixel  / 1000 / 1000);
+}
+
+static int __vc_power_on(struct device *dev)
+{
+	struct i2c_client *client = to_i2c_client(dev);
+	struct v4l2_subdev *sd = i2c_get_clientdata(client);
+	struct vc_device *device = to_vc_device(sd);
+	int ret;
+	u32 delay_us;
+
+	if (!IS_ERR_OR_NULL(device->pins_default)) {
+		ret = pinctrl_select_state(device->pinctrl,
+					   device->pins_default);
+		if (ret < 0)
+			dev_err(dev, "could not set pins\n");
+	}
+	vc_warn(dev, "xvclk_freq = %d\n", device->cam.ctrl.clk_pixel);	
+	ret = clk_set_rate(device->xvclk, device->cam.ctrl.clk_pixel);
+	if (ret < 0)
+		vc_warn(dev, "Failed to set xvclk rate (%dHz)\n", device->cam.ctrl.clk_pixel);
+	if (clk_get_rate(device->xvclk) != device->cam.ctrl.clk_pixel)
+		vc_warn(dev, "xvclk mismatched, modes are based on %dHz\n",
+			 device->cam.ctrl.clk_pixel);
+	ret = clk_prepare_enable(device->xvclk);
+	if (ret < 0) {
+		dev_err(dev, "Failed to enable xvclk\n");
+		return ret;
+	}
+
+	if (device->is_thunderboot)
+		return 0;
+
+	if (!IS_ERR(device->reset_gpio))
+		gpiod_set_value_cansleep(device->reset_gpio, 0);
+
+	ret = regulator_bulk_enable(VC_NUM_SUPPLIES, device->supplies);
+	if (ret < 0) {
+		dev_err(dev, "Failed to enable regulators\n");
+		goto disable_clk;
+	}
+
+	if (!IS_ERR(device->reset_gpio))
+		gpiod_set_value_cansleep(device->reset_gpio, 1);
+
+	usleep_range(500, 1000);
+
+	if (!IS_ERR(device->pwdn_gpio))
+		gpiod_set_value_cansleep(device->pwdn_gpio, 1);
+
+	if (!IS_ERR(device->reset_gpio))
+		usleep_range(6000, 8000);
+	else
+		usleep_range(12000, 16000);
+
+	/* 8192 cycles prior to first SCCB transaction */
+	delay_us = sc3336_cal_delay(8192, device);
+	usleep_range(delay_us, delay_us * 2);
+
+	return 0;
+
+disable_clk:
+	clk_disable_unprepare(device->xvclk);
+
+	return ret;
+}
 static void vc_set_power(struct vc_device *device, int on)
 {
 	struct device *dev = &device->cam.ctrl.client_sen->dev;
@@ -94,6 +213,18 @@ static void vc_set_power(struct vc_device *device, int on)
 	//         vc_core_wait_until_device_is_ready(&device->cam, 1000);
 	// }
 	device->power_on = on;
+
+	if(!dev)
+	{
+		vc_err(dev, "device is NULL\n");
+		return;
+	}
+
+	if(on)
+		__vc_power_on(dev);
+	else
+		__vc_power_off(dev);
+
 }
 
 static int vc_sd_s_power(struct v4l2_subdev *sd, int on)
@@ -130,6 +261,7 @@ static int __maybe_unused vc_suspend(struct device *dev)
 
 	return 0;
 }
+#endif
 
 #ifdef CONFIG_VIDEO_V4L2_SUBDEV_API
 static int vc_open(struct v4l2_subdev *sd, struct v4l2_subdev_fh *fh)
@@ -154,6 +286,7 @@ static int vc_open(struct v4l2_subdev *sd, struct v4l2_subdev_fh *fh)
 	return 0;
 }
 #endif
+
 static int __maybe_unused vc_resume(struct device *dev)
 {
 	struct i2c_client *client = to_i2c_client(dev);
@@ -170,7 +303,6 @@ static int __maybe_unused vc_resume(struct device *dev)
 
 	return 0;
 }
-#endif
 
 static const s64 ctrl_csi_lanes_menu[] = { 1, 2, 4 };
 
@@ -253,19 +385,27 @@ static int vc_sd_s_stream(struct v4l2_subdev *sd, int enable)
 
 	if (state->streaming == enable)
 		return 0;
-
+	vc_info(dev, "streaming %s\n", enable ? "on" : "off");
 	mutex_lock(&device->mutex);
+	vc_info(dev, "Mutex locked\n");
+
 	if (enable) {
 #ifdef ENABLE_PM
-		ret = pm_runtime_get_sync(dev);
-		if (ret < 0) {
-			pm_runtime_put_noidle(dev);
-			mutex_unlock(&device->mutex);
-			return ret;
-		}
+	vc_info(dev, "pm_runtime_get_sync cam\n");
+
+		// ret = pm_runtime_get_sync(dev);
+		// if (ret < 0) {
+		// 	pm_runtime_put_noidle(dev);
+		// 	vc_warn(dev, "Failed to get sync runtime PM: %d\n", ret);
+		// 	mutex_unlock(&device->mutex);
+		// 	return ret;
+		// }
 #endif
+	vc_info(dev, "Set mode for cam\n");
 
 		ret = vc_mod_set_mode(cam, &reset);
+			vc_info(dev, "Set roi for cam\n");
+
 		ret |= vc_sen_set_roi(cam);
 		if (!ret && reset) {
 			ret |= vc_sen_set_exposure(cam, cam->state.exposure);
@@ -273,6 +413,7 @@ static int vc_sd_s_stream(struct v4l2_subdev *sd, int enable)
 			ret |= vc_sen_set_blacklevel(cam,
 						     cam->state.blacklevel);
 		}
+	vc_info(dev, "Start streaming from cam\n");
 
 		ret = vc_sen_start_stream(cam);
 		if (ret) {
@@ -1354,6 +1495,17 @@ static const struct v4l2_subdev_internal_ops vc_sd_internal_ops = {
 static const struct media_entity_operations vc_sd_media_ops = {
 	.link_setup = vc_link_setup,
 };
+static int vc_configure_regulators(struct vc_device *device,struct  device *dev)
+{
+	unsigned int i;
+
+	for (i = 0; i < VC_NUM_SUPPLIES; i++)
+		device->supplies[i].supply = vc_supply_names[i];
+
+	return devm_regulator_bulk_get(dev,
+				       VC_NUM_SUPPLIES,
+				       device->supplies);
+}
 
 static int vc_probe(struct i2c_client *client)
 {
@@ -1361,6 +1513,8 @@ static int vc_probe(struct i2c_client *client)
 	struct vc_device *device;
 	struct vc_cam *cam;
 	int ret;
+
+	
 
 	vc_notice(dev, "%s(): Probing UNIVERSAL VC MIPI Driver (v%s)\n",
 		  __func__, VERSION);
@@ -1371,9 +1525,36 @@ static int vc_probe(struct i2c_client *client)
 
 	cam = &device->cam;
 	cam->ctrl.client_sen = client;
+device->reset_gpio = devm_gpiod_get(dev, "reset", GPIOD_ASIS);
+	if (IS_ERR(device->reset_gpio))
+		dev_warn(dev, "Failed to get reset-gpios\n");
 
-	// vc_setup_power_gpio(device);
-	vc_set_power(device, 1);
+	device->pwdn_gpio = devm_gpiod_get(dev, "pwdn", GPIOD_ASIS);
+	if (IS_ERR(device->pwdn_gpio))
+		dev_warn(dev, "Failed to get pwdn-gpios\n");
+
+	device->pinctrl = devm_pinctrl_get(dev);
+	if (!IS_ERR(device->pinctrl)) {
+		device->pins_default =
+			pinctrl_lookup_state(device->pinctrl,
+					     OF_CAMERA_PINCTRL_STATE_DEFAULT);
+		if (IS_ERR(device->pins_default))
+			dev_err(dev, "could not get default pinstate\n");
+
+		device->pins_sleep =
+			pinctrl_lookup_state(device->pinctrl,
+					     OF_CAMERA_PINCTRL_STATE_SLEEP);
+		if (IS_ERR(device->pins_sleep))
+			dev_err(dev, "could not get sleep pinstate\n");
+	} else {
+		dev_err(dev, "no pinctrl\n");
+	}
+	device->xvclk = devm_clk_get(dev, "xvclk");
+	if (IS_ERR(device->xvclk)) {
+		dev_err(dev, "Failed to get xvclk\n");
+		return -EINVAL;
+	}
+	
 
 	ret = vc_core_init(cam, client);
 	if (ret)
@@ -1387,7 +1568,11 @@ static int vc_probe(struct i2c_client *client)
 	ret = vc_sd_init(device);
 	if (ret)
 		goto error_handler_free;
+	ret = vc_configure_regulators(device,dev);
 
+	vc_set_power(device, 1);
+
+	// vc_setup_power_gpio(device);
 	device->sd.flags |=
 		V4L2_SUBDEV_FL_HAS_DEVNODE | V4L2_SUBDEV_FL_HAS_EVENTS;
 	device->pad.flags = MEDIA_PAD_FL_SOURCE;
@@ -1407,9 +1592,10 @@ static int vc_probe(struct i2c_client *client)
 		goto error_media_entity;
 
 #ifdef ENABLE_PM
+	pm_runtime_enable(dev);
+
 	pm_runtime_get_noresume(dev);
 	pm_runtime_set_active(dev);
-	pm_runtime_enable(dev);
 	pm_runtime_set_autosuspend_delay(dev, 2000);
 	pm_runtime_use_autosuspend(dev);
 	pm_runtime_mark_last_busy(dev);
@@ -1505,8 +1691,23 @@ static struct i2c_driver vc_i2c_driver = {
         .probe_new = vc_probe,
         .remove   = vc_remove,
 };
+static int __init sensor_mod_init(void)
+{
+	return i2c_add_driver(&vc_i2c_driver);
+};
 
-module_i2c_driver(vc_i2c_driver);
+static void __exit sensor_mod_exit(void)
+{
+	i2c_del_driver(&vc_i2c_driver);
+};
+
+
+#if defined(CONFIG_VIDEO_ROCKCHIP_THUNDER_BOOT_ISP) && !defined(CONFIG_INITCALL_ASYNC)
+subsys_initcall(sensor_mod_init);
+#else
+device_initcall_sync(sensor_mod_init);
+#endif
+module_exit(sensor_mod_exit);
 
 MODULE_VERSION(VERSION);
 MODULE_DESCRIPTION("Vision Components GmbH - VC MIPI CSI-2 driver");
